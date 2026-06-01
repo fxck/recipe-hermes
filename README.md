@@ -5,6 +5,35 @@ the self-improving AI agent with persistent memory + skills — on
 [Zerops](https://zerops.io), with **durable state across deploys** and a
 **git-push CI/CD** workflow.
 
+## Why Zerops is the best way to run Hermes
+
+Hermes is awkward to host well: it's **always-on**, **stateful** (its worth is the
+memory and skills it accumulates), **single-instance** (per-instance SQLite), and a
+**heavy tool user** (it shells out to ripgrep/ffmpeg/node, drives a browser, writes
+files). That mix defeats the usual options:
+
+- a **raw VPS** works but becomes a hand-tended snowflake — no CI/CD, manual backups,
+  you run the supervisor and VPN yourself, and a rebuild can lose the agent's memory;
+- **serverless** can't host a long-lived gateway + cron or run Hermes's tool backends;
+- **plain containers** are reproducible but ephemeral — a redeploy wipes the brain.
+
+It's the classic **pet-vs-cattle** tension: you want push-to-deploy infrastructure,
+but the agent is a *pet* whose memory must survive. This recipe resolves it:
+
+| Hermes needs | How this setup delivers it |
+|---|---|
+| Memory that survives redeploys | managed **object storage** + **Litestream** restore-on-boot — `git push` redeploys the code, never the brain |
+| A real OS for its tools | full **Linux container** (SSH, sudo, apt, browser, ffmpeg) — Hermes runs exactly as upstream intends |
+| To stay up 24/7 | **supervised** processes with auto-restart + zero-downtime rolling deploys |
+| Bursty load (idle → heavy agent runs) | **vertical autoscaling** of CPU/RAM + grow-only disk — no overpay, no mid-task OOM |
+| Durable storage without ops | object storage wired by hostname, no external S3 account; managed Postgres one line away for self-hosted Honcho memory |
+| Push-to-deploy | built-in **git CI/CD** — no pipeline, registry, or deploy scripts to maintain |
+| Not exposing an admin panel | project-private network; dashboard over the **Zerops VPN** by default, OAuth-gated public only by choice |
+
+The payoff: a Hermes that's **reproducible** (a thin repo, not a snowflake),
+**durable** (its memory lives in object storage), **always-on**, **secure by
+default**, and shipped by `git push`.
+
 ## Deploy
 
 1. **Import the project** — `zerops-project-import.yaml` creates the `hermes`

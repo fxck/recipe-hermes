@@ -21,7 +21,6 @@ services:
   - hostname: hermes
     type: python@3.11
     buildFromGit: https://github.com/fxck/recipe-hermes
-    zeropsSetup: hermes
     # Private-by-default: no public URL. Reach the dashboard over the Zerops VPN
     # (`zcli vpn up` → http://hermes:9119). Flip to true for DASHBOARD_MODE=oauth.
     enableSubdomainAccess: false
