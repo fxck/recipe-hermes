@@ -1,0 +1,45 @@
+#yamlPreprocessor=on
+# ─────────────────────────────────────────────────────────────────────────────
+# One-shot Zerops project import for the Hermes Agent recipe.
+#
+#   zcli project project-import zerops-project-import.yaml
+#   (or use the "Deploy to Zerops" button / dashboard Import)
+#
+# Creates the project + two services and does a first build from this repo.
+# After import: set your LLM key as a secret on the `hermes` service, then
+# connect your git integration so pushes redeploy (standard Zerops CI/CD).
+# ─────────────────────────────────────────────────────────────────────────────
+project:
+  name: hermes
+  tags:
+    - hermes
+    - ai-agent
+
+services:
+  # The Hermes agent — built from this repo (zerops.yaml). Single, stateful
+  # container (maxContainers: 1 — the agent's state is per-instance).
+  - hostname: hermes
+    type: python@3.11
+    buildFromGit: https://github.com/fxck/recipe-hermes
+    zeropsSetup: hermes
+    # Private-by-default: no public URL. Reach the dashboard over the Zerops VPN
+    # (`zcli vpn up` → http://hermes:9119). Flip to true for DASHBOARD_MODE=oauth.
+    enableSubdomainAccess: false
+    minContainers: 1
+    maxContainers: 1
+    verticalAutoscaling:
+      minRam: 1
+    envSecrets:
+      # Dashboard exposure switch: private (VPN) | oauth (public, gated). See README.
+      DASHBOARD_MODE: private
+      # ── Set ONE LLM provider key in the Zerops GUI (Service → Secret variables) ──
+      # OPENROUTER_API_KEY: <your-key>
+      # OPENAI_API_KEY: <your-key>
+      # ANTHROPIC_API_KEY: <your-key>
+
+  # S3-compatible object storage — durable home for the agent's state
+  # (Litestream streams the SQLite DBs here; flat memory/skills snapshot too).
+  - hostname: storage
+    type: object-storage
+    objectStorageSize: 5
+    priority: 10

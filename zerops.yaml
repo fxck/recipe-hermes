@@ -1,0 +1,71 @@
+# Hermes Agent on Zerops — build + run.
+#
+# Build: fetch the pinned Hermes wheel (prebuilt dashboard) into a relocatable
+# ./vendor; overlay the dashboard_auth namespace pkg + bundled skills from source;
+# merge the user's committed skills/. Run: supervised Litestream + gateway +
+# dashboard, with restore-on-boot so a fresh container rehydrates its state.
+zerops:
+  - setup: hermes
+    build:
+      base: python@3.11
+      os: ubuntu
+      prepareCommands:
+        - "sudo apt-get update && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y git build-essential python3-dev libffi-dev"
+      buildCommands:
+        # Clean (self-deploy seeds the build from the prior artifact).
+        - "rm -rf ./vendor ./bundled-skills ./optional-skills"
+        # Pinned source — provides sdist-only skills + the dashboard_auth namespace pkg.
+        - "git clone --depth 1 --branch v2026.5.29.2 https://github.com/NousResearch/hermes-agent.git src"
+        # Upstream bundled skills → build artifact; user's committed skills/ merged on top.
+        - "cp -r src/skills ./bundled-skills"
+        - "[ -d src/optional-skills ] && cp -r src/optional-skills ./optional-skills || true"
+        - "[ -d skills ] && cp -rn skills/. ./bundled-skills/ || true"
+        # Official wheel = prebuilt dashboard web_dist + plugins + all deps.
+        - "pip install --target=./vendor \"hermes-agent[all]==0.15.2\" fastapi \"uvicorn[standard]\""
+        # dashboard_auth is a namespace pkg pip drops from the wheel — overlay from source (keeps web_dist).
+        - "cp -rn src/hermes_cli/. ./vendor/hermes_cli/"
+        - "rm -rf src"
+        - "test -d ./vendor/hermes_cli/web_dist || { echo 'ERROR: web_dist missing'; exit 1; }"
+        - "test -d ./vendor/hermes_cli/dashboard_auth || { echo 'ERROR: dashboard_auth missing'; exit 1; }"
+      deployFiles:
+        - ./
+    run:
+      base: python@3.11
+      os: ubuntu
+      prepareCommands:
+        - "sudo apt-get update && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y ripgrep ffmpeg nodejs npm curl sqlite3"
+        # Litestream — continuous SQLite replication to object storage.
+        - "curl -fsSL https://github.com/benbjohnson/litestream/releases/download/v0.3.13/litestream-v0.3.13-linux-amd64.tar.gz | sudo tar -xzf - -C /usr/local/bin litestream"
+      ports:
+        - port: 9119
+          httpSupport: true
+      envVariables:
+        PYTHONPATH: /var/www/vendor
+        HERMES_HOME: /home/zerops/.hermes
+        HERMES_BUNDLED_SKILLS: /var/www/bundled-skills
+        # Litestream → the 'storage' object-storage service (S3/MinIO, path-style).
+        LITESTREAM_ENDPOINT: ${storage_apiUrl}
+        LITESTREAM_BUCKET: ${storage_bucketName}
+        LITESTREAM_ACCESS_KEY_ID: ${storage_accessKeyId}
+        LITESTREAM_SECRET_ACCESS_KEY: ${storage_secretAccessKey}
+      initCommands:
+        - "mkdir -p $HERMES_HOME"
+        # Rehydrate each SQLite DB from object storage on every (fresh) container start.
+        - "litestream restore -if-replica-exists -config /var/www/litestream.yml $HERMES_HOME/state.db || true"
+        - "litestream restore -if-replica-exists -config /var/www/litestream.yml $HERMES_HOME/kanban.db || true"
+        - "litestream restore -if-replica-exists -config /var/www/litestream.yml $HERMES_HOME/memory_store.db || true"
+        # Ensure each DB exists in WAL mode so Litestream can begin watching it.
+        - "for d in state kanban memory_store; do [ -f $HERMES_HOME/$d.db ] || sqlite3 $HERMES_HOME/$d.db 'PRAGMA journal_mode=WAL; VACUUM;'; done"
+      # Three supervised processes (auto-restart). Litestream first so replication
+      # is live before the agent writes.
+      startCommands:
+        - command: "litestream replicate -config /var/www/litestream.yml"
+          name: litestream
+        - command: "python3 /var/www/vendor/bin/hermes gateway run"
+          name: gateway
+        - command: "sh /var/www/bin/hermes-dashboard.sh"
+          name: dashboard
+      healthCheck:
+        httpGet:
+          port: 9119
+          path: /login

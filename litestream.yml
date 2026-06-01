@@ -1,0 +1,37 @@
+# Litestream — continuous replication of Hermes's three SQLite DBs to the Zerops
+# object-storage service ('storage'). Credentials/endpoint come from env vars set
+# in zerops.yaml run.envVariables (resolved from the storage service). Each DB is
+# restored on container boot via initCommands, then streamed here while running.
+dbs:
+  - path: /home/zerops/.hermes/state.db          # sessions + FTS5 search
+    replicas:
+      - type: s3
+        endpoint: ${LITESTREAM_ENDPOINT}
+        bucket: ${LITESTREAM_BUCKET}
+        path: state
+        region: us-east-1
+        access-key-id: ${LITESTREAM_ACCESS_KEY_ID}
+        secret-access-key: ${LITESTREAM_SECRET_ACCESS_KEY}
+        force-path-style: true
+
+  - path: /home/zerops/.hermes/kanban.db         # agent task board
+    replicas:
+      - type: s3
+        endpoint: ${LITESTREAM_ENDPOINT}
+        bucket: ${LITESTREAM_BUCKET}
+        path: kanban
+        region: us-east-1
+        access-key-id: ${LITESTREAM_ACCESS_KEY_ID}
+        secret-access-key: ${LITESTREAM_SECRET_ACCESS_KEY}
+        force-path-style: true
+
+  - path: /home/zerops/.hermes/memory_store.db   # holographic memory
+    replicas:
+      - type: s3
+        endpoint: ${LITESTREAM_ENDPOINT}
+        bucket: ${LITESTREAM_BUCKET}
+        path: memory_store
+        region: us-east-1
+        access-key-id: ${LITESTREAM_ACCESS_KEY_ID}
+        secret-access-key: ${LITESTREAM_SECRET_ACCESS_KEY}
+        force-path-style: true
